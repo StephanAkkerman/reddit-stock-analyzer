@@ -2,7 +2,8 @@ from transformers import pipeline
 
 
 class SentimentAnalyzer:
-    def __init__(self, model_path: str = "./fintwitbert-wsb-finetuned"):
+
+    def __init__(self, model_path: str = "StephanAkkerman/FinTwitBERT-wsb-sentiment"):
         # We load the local model we just trained
         self.pipe = pipeline(
             "text-classification", model=model_path, truncation=True, max_length=512

@@ -1,0 +1,4 @@
+asyncpraw
+python-dotenv
+transformers
+gliner2[local]
