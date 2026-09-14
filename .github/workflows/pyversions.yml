@@ -5,7 +5,7 @@ on:
   push:
     paths:
       - 'requirements.txt'  # Dependency file
-      - 'setup.py'          # Setup script
+      - 'pyproject.toml'    # Project metadata and dependencies
       - '.github/workflows/pyversions.yml' #This file
 permissions:
   contents: read
