@@ -139,7 +139,7 @@ class _Accumulator:
         self.last_seen = 0.0
         self.posts: list[AnalyzedPost] = []
 
-    def add(self, post: AnalyzedPost) -> None:
+    def add(self, post: AnalyzedPost, symbol: str) -> None:
         self.mentions += 1
         author = _clean_author(post.post.author)
         if author:
@@ -148,8 +148,15 @@ class _Accumulator:
         self.score_sum += int(post.post.score)
         self.comment_sum += int(post.post.num_comments)
         self.engagement += post.post.engagement
-        self.sentiment_scores.append(post.sentiment_score)
-        self.sentiment_counts[post.sentiment] += 1
+        # Sentiment towards *this* ticker where the analyzer could attribute
+        # it (a post going long one name and short another), the post's own
+        # label otherwise.
+        score = post.sentiment_for(symbol)
+        attributed = symbol in post.ticker_sentiment
+        self.sentiment_scores.append(score)
+        self.sentiment_counts[
+            _mood_from_score(score) if attributed else post.sentiment
+        ] += 1
         self.first_seen = min(self.first_seen, post.created_utc)
         self.last_seen = max(self.last_seen, post.created_utc)
         self.posts.append(post)
@@ -297,7 +304,7 @@ def compute_trends(
     accumulators: dict[str, _Accumulator] = defaultdict(_Accumulator)
     for post in current:
         for symbol in post.tickers:
-            accumulators[symbol].add(post)
+            accumulators[symbol].add(post, symbol)
 
     eligible = {
         symbol: acc

@@ -21,11 +21,11 @@ dependencies = [
 ```
 
 Note that the core dependency `stock-recognizer` pulls in `torch` and
-`transformers`. That matches where the existing ML stack already lives
-(`app/ml/`), but it means **this package does not belong in `fintwit-web`'s
-`[test]` extra** — that extra deliberately excludes torch. Import it lazily
-inside functions, exactly as `app/ml/` already does, so the test suite never
-touches it.
+`transformers`, which is also what the sentiment model runs on. That matches
+where the existing ML stack already lives (`app/ml/`), but it means **this
+package does not belong in `fintwit-web`'s `[test]` extra** — that extra
+deliberately excludes torch. Import it lazily inside functions, exactly as
+`app/ml/` already does, so the test suite never touches it.
 
 ## The 7-step migration order
 
@@ -48,9 +48,14 @@ class RedditTickerTrend(BaseModel):
     heat_score: float
     sentiment: Literal["bullish", "bearish", "neutral"]
     sentiment_score: float
+    sentiment_breakdown: dict[str, int]
     is_emerging: bool
     sample_posts: list[dict]
 ```
+
+An `AnalyzedPost` additionally carries `ticker_sentiment: dict[str, float]` —
+per-ticker scores for posts that discuss several names — so a post that is
+long one and short another does not report the same label for both.
 
 ### 2. Service (`app/services/reddit_service.py`)
 
@@ -104,7 +109,13 @@ six subreddits × two listings, and mention counts do not move meaningfully
 faster than that.
 
 Warm the models during lifespan startup (`service.analyzer.warm_up()`) so the
-first request does not pay for the load.
+first request does not pay for the load — that covers both the recognizer and
+the sentiment model.
+
+Sentiment inference is the slowest part of a scrape. Posts mentioning several
+tickers trigger a second, segment-level pass for attribution; set
+`PostAnalyzer(per_ticker_sentiment=False)` if a tighter worker budget matters
+more than telling a post's long leg from its short leg.
 
 ### 5. API endpoint (`app/api/`)
 
@@ -118,10 +129,11 @@ complete, runnable version including the lifespan handler.
 
 ### 6–7. Frontend
 
-`heat_score` drives ordering, `momentum` and `spike_score` drive the
-badge/arrow, `timeline.series[symbol]` is a ready-made sparkline, and
-`subreddits` per ticker shows whether hype has spread past r/wallstreetbets.
-`sample_posts` gives each row a drill-down without a second request.
+`heat_score` drives ordering, `sentiment`/`sentiment_score` the bull/bear
+colouring (and `sentiment_breakdown` a stacked bar of how split the crowd is),
+`momentum` and `spike_score` drive the badge/arrow, `timeline.series[symbol]`
+is a ready-made sparkline, and `subreddits` per ticker shows whether hype has
+spread past r/wallstreetbets. `sample_posts` gives each row a drill-down without a second request.
 
 ## Mapping the existing code
 
@@ -131,7 +143,9 @@ badge/arrow, `timeline.series[symbol]` is a ready-made sparkline, and
 | `reddit_service._normalize_post_payload` | `client.normalize_submission` |
 | `reddit_service._reddit_credentials_from_env` | `config.reddit_credentials_from_env` (accepts the same legacy names) |
 | ticker counting in `mention_aggregator` | `compute_trends(...)` |
+| `app/ml/sentiment.py` (FinTwitBERT, tweets) | `SentimentAnalyzer` (FinTwitBERT-wsb, Reddit-tuned) — keep both; the tweet model stays right for the X pipeline |
 | — | `rising` / `emerging` / `fading`, momentum, spike z-scores, timeline |
+| — | per-ticker sentiment attribution within a post |
 
 `mention_aggregator.py` also aggregates Twitter mentions, so it should keep its
 own cross-source rollup — only its Reddit leg is replaced.

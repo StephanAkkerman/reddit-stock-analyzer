@@ -1,17 +1,23 @@
-"""Post-level sentiment via FinTwitBERT.
+"""Post sentiment via FinTwitBERT-wsb.
 
-``transformers`` and ``torch`` are optional extras: without them every post is
+The default model is
+`StephanAkkerman/FinTwitBERT-wsb-sentiment <https://huggingface.co/StephanAkkerman/FinTwitBERT-wsb-sentiment>`_
+— BERT pre-trained on financial tweets and fine-tuned on WallStreetBets-style
+text, so it reads "puts printing" and "she's gonna rip" the way a trader does
+rather than the way a general-purpose sentiment model does.
+
+``transformers`` and ``torch`` arrive transitively with ``stock-recognizer``,
+so sentiment works out of the box. If they are somehow absent every post is
 labelled ``neutral`` and the rest of the pipeline (scraping, ticker
-recognition, trend maths) still works. Install with::
-
-    pip install "reddit-stock-analyzer[sentiment]"
+recognition, trend maths) still works.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Sequence
+import re
+from typing import Any, Mapping, Sequence
 
 from .models import Sentiment
 
@@ -19,27 +25,51 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "StephanAkkerman/FinTwitBERT-wsb-sentiment"
 
-#: FinTwitBERT emits BULLISH/BEARISH/NEUTRAL; the generic LABEL_n names are
-#: the fallback for checkpoints published without an id2label mapping.
-_LABEL_MAP: dict[str, Sentiment] = {
+#: Label names financial classifiers publish. FinTwitBERT emits
+#: BULLISH/BEARISH/NEUTRAL; the rest are here so a swapped-in model works too.
+_NAMED_LABELS: dict[str, Sentiment] = {
     "BULLISH": "bullish",
     "POSITIVE": "bullish",
-    "LABEL_2": "bullish",
+    "POS": "bullish",
     "BEARISH": "bearish",
     "NEGATIVE": "bearish",
-    "LABEL_0": "bearish",
+    "NEG": "bearish",
     "NEUTRAL": "neutral",
-    "LABEL_1": "neutral",
+    "NEU": "neutral",
 }
 
-#: BERT truncates anyway; trimming first keeps tokenisation cheap on the
-#: 10k-character DD posts r/wallstreetbets is fond of.
+#: A checkpoint published without an ``id2label`` mapping reports LABEL_0,
+#: LABEL_1... There is no safe way to guess which index means bullish, and
+#: guessing wrong silently inverts every score, so these map to neutral and
+#: warn. Pass ``label_map={"LABEL_0": "bearish", ...}`` to state the order.
+_GENERIC_LABEL_RE = re.compile(r"^LABEL_\d+$")
+
+#: BERT truncates at 512 tokens anyway; trimming first keeps tokenisation
+#: cheap on the 10k-character DD posts r/wallstreetbets is fond of.
 MAX_CHARS = 2000
 
 
-def normalize_label(label: str) -> Sentiment:
-    """Map a model label onto ``bullish`` / ``bearish`` / ``neutral``."""
-    return _LABEL_MAP.get(str(label).strip().upper(), "neutral")
+def normalize_label(
+    label: str, label_map: Mapping[str, Sentiment] | None = None
+) -> Sentiment:
+    """Map a model label onto ``bullish`` / ``bearish`` / ``neutral``.
+
+    Parameters
+    ----------
+    label : str
+        Raw label from the classifier.
+    label_map : mapping, optional
+        Extra or overriding label names, upper-cased keys.
+
+    Returns
+    -------
+    Sentiment
+        ``neutral`` for anything unrecognised.
+    """
+    key = str(label).strip().upper()
+    if label_map and key in label_map:
+        return label_map[key]
+    return _NAMED_LABELS.get(key, "neutral")
 
 
 def signed_score(label: Sentiment, confidence: float) -> float:
@@ -64,6 +94,11 @@ class SentimentAnalyzer:
         for tests and for sharing one loaded model.
     batch_size : int, default 16
         Texts per forward pass.
+    label_map : mapping, optional
+        Label name to sentiment, for a model whose labels this package does
+        not already know — including one that reports generic ``LABEL_0`` /
+        ``LABEL_1`` names, where guessing the order would risk silently
+        swapping bullish and bearish.
     """
 
     def __init__(
@@ -72,11 +107,16 @@ class SentimentAnalyzer:
         *,
         pipeline: Any | None = None,
         batch_size: int = 16,
+        label_map: Mapping[str, Sentiment] | None = None,
     ) -> None:
         self.model_path = model_path
         self._pipe = pipeline
         self._load_failed = False
         self.batch_size = max(1, int(batch_size))
+        self.label_map = {
+            str(k).strip().upper(): v for k, v in (label_map or {}).items()
+        }
+        self._warned_generic = False
 
     @property
     def available(self) -> bool:
@@ -159,10 +199,34 @@ class SentimentAnalyzer:
         for (index, _), prediction in zip(indexed, predictions or ()):
             if isinstance(prediction, list):  # top_k pipelines return a list
                 prediction = prediction[0] if prediction else {}
-            label = normalize_label((prediction or {}).get("label", ""))
+            raw_label = (prediction or {}).get("label", "")
+            label = normalize_label(raw_label, self.label_map)
             confidence = float((prediction or {}).get("score", 0.0) or 0.0)
+            if label == "neutral":
+                self._warn_if_unmapped(raw_label)
             results[index] = (label, confidence)
         return results
+
+    def _warn_if_unmapped(self, raw_label: str) -> None:
+        """Warn once when the model's labels carry no direction.
+
+        A checkpoint without an ``id2label`` mapping reports LABEL_0/LABEL_1,
+        which this package refuses to guess at: everything reads neutral until
+        a ``label_map`` says which index is which. Silence here would look
+        exactly like a genuinely undecided subreddit.
+        """
+        if self._warned_generic:
+            return
+        key = str(raw_label).strip().upper()
+        if _GENERIC_LABEL_RE.match(key):
+            self._warned_generic = True
+            logger.warning(
+                "Sentiment model %s reports generic labels (%s), so every post "
+                "reads neutral. Pass label_map={'LABEL_0': 'bearish', ...} to "
+                "map them.",
+                self.model_path,
+                raw_label,
+            )
 
     async def analyze_batch_async(
         self, texts: Sequence[str]

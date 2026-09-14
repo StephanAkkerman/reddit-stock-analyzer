@@ -412,3 +412,53 @@ class TestEdges:
         posts = [make_analyzed("a", tickers=["GME"], created_utc=NOW)]
         payload = json.dumps(_report(posts).to_dict())
         assert '"GME"' in payload
+
+
+class TestPerTickerSentiment:
+    def test_attributed_sentiment_beats_the_post_label(self):
+        # One post, long NVDA and short INTC. Without attribution both would
+        # inherit the post's bullish label and INTC would read bullish.
+        posts = [
+            make_analyzed(
+                "a",
+                tickers=["NVDA", "INTC"],
+                sentiment="bullish",
+                sentiment_score=0.7,
+                ticker_sentiment={"NVDA": 0.9, "INTC": -0.8},
+                created_utc=NOW,
+            )
+        ]
+        trends = _by_symbol(_report(posts))
+        assert trends["NVDA"].sentiment == "bullish"
+        assert trends["INTC"].sentiment == "bearish"
+        assert trends["INTC"].sentiment_score == pytest.approx(-0.8)
+        assert trends["INTC"].sentiment_breakdown == {"bearish": 1}
+
+    def test_unattributed_tickers_still_use_the_post_label(self):
+        posts = [
+            make_analyzed(
+                "a",
+                tickers=["NVDA", "INTC"],
+                sentiment="bullish",
+                sentiment_score=0.7,
+                ticker_sentiment={"INTC": -0.8},
+                created_utc=NOW,
+            )
+        ]
+        trends = _by_symbol(_report(posts))
+        assert trends["NVDA"].sentiment_score == pytest.approx(0.7)
+        assert trends["NVDA"].sentiment_breakdown == {"bullish": 1}
+
+    def test_subreddit_mood_stays_post_level(self):
+        # A subreddit's mood is about its posts, not about any one ticker.
+        posts = [
+            make_analyzed(
+                "a",
+                tickers=["NVDA", "INTC"],
+                sentiment="bullish",
+                sentiment_score=0.7,
+                ticker_sentiment={"INTC": -0.8},
+                created_utc=NOW,
+            )
+        ]
+        assert _report(posts).by_subreddit[0].mood == "bullish"

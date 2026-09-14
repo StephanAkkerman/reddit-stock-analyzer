@@ -99,6 +99,7 @@ def make_analyzed(
     tickers: Sequence[str] = (),
     sentiment: str = "neutral",
     sentiment_score: float = 0.0,
+    ticker_sentiment: dict[str, float] | None = None,
     **post_kwargs: object,
 ) -> AnalyzedPost:
     """Build an :class:`AnalyzedPost` with sensible defaults."""
@@ -108,6 +109,7 @@ def make_analyzed(
         sentiment=sentiment,  # type: ignore[arg-type]
         sentiment_score=sentiment_score,
         sentiment_confidence=abs(sentiment_score),
+        ticker_sentiment=dict(ticker_sentiment or {}),
     )
 
 

@@ -29,6 +29,7 @@ can serve it straight out of a FastAPI route. See
 - [Key Features](#key-features-)
 - [Installation](#installation-)
 - [Usage](#usage-)
+- [Sentiment](#sentiment-)
 - [Trend Metrics](#trend-metrics-)
 - [Configuration](#configuration-)
 - [Citation](#citation-)
@@ -45,6 +46,8 @@ can serve it straight out of a FastAPI route. See
 - **Real ticker recognition** — `stock-recognizer` handles cashtags, market-data
   validation, "DD" the company vs. "DD" the due diligence, and company-name
   mapping (`TSMC` → `TSM`).
+- **WSB-native sentiment** — [FinTwitBERT-wsb](https://huggingface.co/StephanAkkerman/FinTwitBERT-wsb-sentiment)
+  reads "puts printing" the way a trader does, per post *and per ticker*.
 - **Trend analytics** — two-window momentum, spike z-scores, emerging/fading
   detection, per-subreddit breakdowns and an hourly mention timeline.
 - **Async and shareable** — concurrent scraping, models loaded once, CPU-bound
@@ -63,8 +66,10 @@ pip install "reddit-stock-analyzer[praw]"       # authenticated scraping
 pip install "reddit-stock-analyzer[sentiment]"  # FinTwitBERT post sentiment
 ```
 
-Without `[sentiment]` every post is labelled `neutral` and everything else
-still works. Credentials are read from the environment or a `.env` file — see
+`[sentiment]` is usually redundant: `transformers` and `torch` already arrive
+with `stock-recognizer`, so sentiment works out of the box. If they are
+missing, every post is labelled `neutral` and everything else still works.
+Credentials are read from the environment or a `.env` file — see
 [`.env.example`](.env.example).
 
 ## Usage ⌨️
@@ -136,6 +141,71 @@ SPY            33    35   -0.06  +2.01  0.604  neutral (+0.03)
 rising: NVDA, SMCI
 emerging: RKLB
 fading: AMC
+```
+
+## Sentiment 🐂🐻
+
+Posts are classified by
+[`StephanAkkerman/FinTwitBERT-wsb-sentiment`](https://huggingface.co/StephanAkkerman/FinTwitBERT-wsb-sentiment)
+— BERT pre-trained on financial tweets and fine-tuned on WallStreetBets-style
+text, so it reads "puts printing" and "she's gonna rip" as a trader would.
+Labels are normalised to `bullish` / `bearish` / `neutral`, and every score is
+**signed by direction**: `+0.9` is confidently bullish, `-0.9` confidently
+bearish, `0.0` neutral. That makes them averageable, which is what every
+aggregate in a report is built on.
+
+Sentiment surfaces at four levels:
+
+| Level | Field |
+| --- | --- |
+| Post | `AnalyzedPost.sentiment`, `.sentiment_score`, `.sentiment_confidence` |
+| Ticker within a post | `AnalyzedPost.sentiment_for("INTC")` |
+| Ticker across the window | `TickerTrend.sentiment`, `.sentiment_score`, `.sentiment_breakdown` |
+| Subreddit / overall | `SubredditSummary.mood`, `TrendReport.mood` |
+
+### Per-ticker attribution
+
+A post reading *"Long NVDA, short INTC"* is bullish and bearish at once. One
+post-level label would give one of the two the wrong sign, so posts that
+mention **more than one** ticker are split into segments, and each ticker is
+scored from the segments that name **only it** — a sentence mentioning both
+says nothing about either in particular, and is used only when a ticker has
+no sentence of its own:
+
+```python
+analyzed.sentiment            # 'bullish'  — the post as a whole
+analyzed.sentiment_for("NVDA")  # +0.9
+analyzed.sentiment_for("INTC")  # -0.8
+```
+
+Single-ticker posts — the majority — cost nothing extra: the post label is
+already about that ticker. A ticker the recognizer resolved from a company
+name ("TSMC" → `TSM`) has no literal segment to match, and falls back to the
+post's score. Switch the whole thing off with
+`PostAnalyzer(per_ticker_sentiment=False)`.
+
+`TickerTrend.sentiment_score` is the mean of these attributed scores, so a
+ticker that everyone is shorting reads bearish even in a bullish subreddit.
+
+### Swapping the model
+
+```python
+from reddit_stock_analyzer import PostAnalyzer, SentimentAnalyzer
+
+analyzer = PostAnalyzer(sentiment=SentimentAnalyzer("your-org/your-model"))
+```
+
+Labels named `BULLISH`/`BEARISH`/`NEUTRAL` (or `POSITIVE`/`NEGATIVE`) are
+understood as-is. A checkpoint published without an `id2label` mapping reports
+`LABEL_0`, `LABEL_1`... — that order is **not** guessed, since guessing wrong
+silently inverts every score. Those read neutral and log a warning until you
+say which is which:
+
+```python
+SentimentAnalyzer(
+    "your-org/your-model",
+    label_map={"LABEL_0": "bearish", "LABEL_1": "neutral", "LABEL_2": "bullish"},
+)
 ```
 
 ## Trend Metrics 📈

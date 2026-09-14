@@ -18,7 +18,10 @@ dependencies = [
 # Authenticated scraping. Without it the anonymous JSON endpoints are used,
 # which work but are rate limited harder.
 praw = ["asyncpraw", "python-dotenv"]
-# FinTwitBERT post sentiment. Without it every post is labelled neutral.
+# FinTwitBERT-wsb post sentiment. Normally redundant — stock-recognizer
+# already pulls transformers and torch — but pinned here so the sentiment
+# path keeps working if that ever stops being true. Without them every post
+# is labelled neutral.
 sentiment = ["transformers", "torch"]
 test = ["pytest", "pytest-asyncio", "httpx"]
 

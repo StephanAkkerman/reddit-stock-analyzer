@@ -80,6 +80,15 @@ class AnalyzedPost:
     sentiment: Sentiment = "neutral"
     sentiment_score: float = 0.0
     sentiment_confidence: float = 0.0
+    #: Signed sentiment per ticker, for posts that discuss several. A post
+    #: reading "long NVDA, short INTC" is bullish and bearish at once, and one
+    #: post-level label would attribute the wrong half to each. Only populated
+    #: where the two differ; use :meth:`sentiment_for` rather than reading it.
+    ticker_sentiment: dict[str, float] = field(default_factory=dict)
+
+    def sentiment_for(self, symbol: str) -> float:
+        """Signed sentiment towards *symbol*, falling back to the post's own."""
+        return self.ticker_sentiment.get(symbol, self.sentiment_score)
 
     @property
     def id(self) -> str:
@@ -101,6 +110,7 @@ class AnalyzedPost:
             "sentiment": self.sentiment,
             "sentiment_score": self.sentiment_score,
             "sentiment_confidence": self.sentiment_confidence,
+            "ticker_sentiment": dict(self.ticker_sentiment),
         }
 
 
