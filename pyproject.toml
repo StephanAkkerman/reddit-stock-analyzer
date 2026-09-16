@@ -1,6 +1,6 @@
 [project]
 name = "reddit-stock-analyzer"
-version = "0.1.0"
+dynamic = ["version"]
 authors = [{ name = "Stephan Akkerman", email = "stephan@akkerman.ai" }]
 description = "Scrape finance subreddits, recognise the stocks discussed, and rank what is trending."
 readme = "README.md"
@@ -34,6 +34,11 @@ reddit-stock-analyzer = "reddit_stock_analyzer.__main__:main"
 [build-system]
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
+
+# Single source of truth for the version: `reddit_stock_analyzer/_version.py`.
+# A release bumps that one literal; this reads it, so the two can never drift.
+[tool.setuptools.dynamic]
+version = { attr = "reddit_stock_analyzer._version.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["."]

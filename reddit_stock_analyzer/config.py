@@ -10,6 +10,8 @@ from __future__ import annotations
 import os
 import re
 
+from ._version import __version__
+
 SUBREDDIT_NAME_RE = re.compile(r"^[A-Za-z0-9_]{3,32}$")
 
 #: Finance subreddits grouped by the kind of discussion they carry. The
@@ -84,9 +86,12 @@ VALID_TIME_FILTERS: frozenset[str] = frozenset(
 #: Reddit rejects listing requests above 100 items per call.
 MAX_LIMIT = 100
 
+#: Reddit asks that clients identify themselves. Built from the package
+#: version so a release cannot leave a stale number in the header.
 USER_AGENT = os.getenv(
     "REDDIT_USER_AGENT_OVERRIDE",
-    "reddit-stock-analyzer/0.1 (+https://github.com/StephanAkkerman/reddit-stock-analyzer)",
+    f"reddit-stock-analyzer/{__version__} "
+    "(+https://github.com/StephanAkkerman/reddit-stock-analyzer)",
 )
 
 

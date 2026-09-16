@@ -1,5 +1,6 @@
 """Scrape finance subreddits, recognise the stocks discussed, and rank trends."""
 
+from ._version import __version__
 from .aggregator import (
     DEFAULT_SORTS,
     RedditTrendService,
@@ -26,8 +27,6 @@ from .models import (
 from .recognizer import TickerExtractor, get_default_extractor
 from .sentiment import SentimentAnalyzer
 from .trends import DEFAULT_HEAT_WEIGHTS, compute_trends
-
-__version__ = "0.1.0"
 
 __all__ = [
     "AnalyzedPost",
