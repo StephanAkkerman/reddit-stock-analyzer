@@ -1,4 +1,5 @@
+httpx
+stock-recognizer>=0.1.1
 asyncpraw
 python-dotenv
 transformers
-gliner2[local]

@@ -1,3 +1,59 @@
+[project]
+name = "reddit-stock-analyzer"
+dynamic = ["version"]
+authors = [{ name = "Stephan Akkerman", email = "stephan@akkerman.ai" }]
+description = "Scrape finance subreddits, recognise the stocks discussed, and rank what is trending."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+keywords = ["reddit", "stocks", "wallstreetbets", "sentiment", "trends"]
+dependencies = [
+    "httpx",
+    # Ticker + company recognition. Pulls torch/transformers transitively for
+    # its GLiNER2 path; `TickerExtractor(use_ai=False)` skips loading it.
+    "stock-recognizer>=0.1.1",
+]
+
+[project.optional-dependencies]
+# Authenticated scraping. Without it the anonymous JSON endpoints are used,
+# which work but are rate limited harder.
+praw = ["asyncpraw", "python-dotenv"]
+# FinTwitBERT-wsb post sentiment. Normally redundant — stock-recognizer
+# already pulls transformers and torch — but pinned here so the sentiment
+# path keeps working if that ever stops being true. Without them every post
+# is labelled neutral.
+sentiment = ["transformers", "torch"]
+test = ["pytest", "pytest-asyncio", "httpx"]
+
+[project.scripts]
+reddit-stock-analyzer = "reddit_stock_analyzer.__main__:main"
+
+[project.urls]
+"Homepage" = "https://github.com/StephanAkkerman/reddit-stock-analyzer"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+# Single source of truth for the version: `reddit_stock_analyzer/_version.py`.
+# A release bumps that one literal; this reads it, so the two can never drift.
+[tool.setuptools.dynamic]
+version = { attr = "reddit_stock_analyzer._version.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["reddit_stock_analyzer*"]
+
+[tool.setuptools.package-data]
+reddit_stock_analyzer = ["py.typed"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+# Import the package from the working tree, so the suite runs without an
+# editable install too.
+pythonpath = ["."]
+
 [tool.isort]
 multi_line_output = 3
 include_trailing_comma = true
