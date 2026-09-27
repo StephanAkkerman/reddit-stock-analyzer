@@ -1,5 +1,5 @@
 httpx
-stock-recognizer>=0.1.1
+stock-recognizer>=0.2.1
 asyncpraw
 python-dotenv
 transformers

@@ -11,7 +11,7 @@ dependencies = [
     "httpx",
     # Ticker + company recognition. Pulls torch/transformers transitively for
     # its GLiNER2 path; `TickerExtractor(use_ai=False)` skips loading it.
-    "stock-recognizer>=0.1.1",
+    "stock-recognizer>=0.2.1",
 ]
 
 [project.optional-dependencies]
